@@ -1,0 +1,6 @@
+# openclaw_pg extension
+comment = 'OpenClaw Memory System for PostgreSQL'
+default_version = '0.1.0'
+relocatable = false
+superuser = false
+requires = 'vector, pgcrypto'
