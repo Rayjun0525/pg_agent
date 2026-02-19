@@ -9,13 +9,28 @@ from psycopg2.extras import RealDictCursor
 
 class Database:
     def __init__(self, connection_url: str):
+        self._connection_url = connection_url
         self.conn = psycopg2.connect(connection_url)
         self.conn.autocommit = True
         
+    def _ensure_connection(self):
+        """Reconnect if the connection is closed or broken."""
+        try:
+            if self.conn.closed:
+                raise psycopg2.InterfaceError("Connection closed")
+            # Lightweight check
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        except (psycopg2.InterfaceError, psycopg2.OperationalError):
+            self.conn = psycopg2.connect(self._connection_url)
+            self.conn.autocommit = True
+
     def close(self):
-        self.conn.close()
+        if not self.conn.closed:
+            self.conn.close()
         
     def execute(self, query: str, params=None):
+        self._ensure_connection()
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, params)
             try:
@@ -30,7 +45,7 @@ class Database:
     # Settings
     def get_setting(self, key: str):
         result = self.execute_one(
-            "SELECT pg_agent.get_setting(%s) as value",
+            "SELECT pgagent.get_setting(%s) as value",
             (key,)
         )
         if result and result['value']:
@@ -41,12 +56,12 @@ class Database:
         if isinstance(value, str) and not value.startswith('"'):
             value = f'"{value}"'
         self.execute(
-            "SELECT pg_agent.set_setting(%s, %s::jsonb)",
+            "SELECT pgagent.set_setting(%s, %s::jsonb)",
             (key, value if isinstance(value, str) else json.dumps(value))
         )
         
     def get_all_settings(self) -> dict:
-        result = self.execute_one("SELECT pg_agent.get_all_settings() as settings")
+        result = self.execute_one("SELECT pgagent.get_all_settings() as settings")
         if result and result['settings']:
             settings = result['settings']
             # Parse JSON strings
@@ -59,7 +74,7 @@ class Database:
               importance: float = 0.7, metadata: dict = None):
         embedding_str = f"[{','.join(map(str, embedding))}]" if embedding else None
         result = self.execute_one(
-            """SELECT pg_agent.store(%s, %s::vector(1536), %s, %s, %s::jsonb) as memory_id""",
+            """SELECT pgagent.store(%s, %s::vector, %s, %s, %s::jsonb) as memory_id""",
             (content, embedding_str, source, importance, json.dumps(metadata or {}))
         )
         return result['memory_id'] if result else None
@@ -67,31 +82,31 @@ class Database:
     def search(self, query: str, embedding, limit: int = 5, min_similarity: float = 0.3):
         embedding_str = f"[{','.join(map(str, embedding))}]" if embedding else None
         return self.execute(
-            """SELECT * FROM pg_agent.search(%s, %s::vector(1536), %s, 0.7, 0.3, %s)""",
+            """SELECT * FROM pgagent.search(%s, %s::vector, %s, 0.7, 0.3, %s)""",
             (query, embedding_str, limit, min_similarity)
         )
         
     def search_fts(self, query: str, limit: int = 5):
         return self.execute(
-            """SELECT * FROM pg_agent.search_fts(%s, %s)""",
+            """SELECT * FROM pgagent.search_fts(%s, %s)""",
             (query, limit)
         )
         
     def should_capture(self, text: str) -> bool:
         result = self.execute_one(
-            "SELECT pg_agent.should_capture(%s) as should",
+            "SELECT pgagent.should_capture(%s) as should",
             (text,)
         )
         return result['should'] if result else False
         
     def get_stats(self) -> dict:
-        result = self.execute_one("SELECT * FROM pg_agent.stats()")
+        result = self.execute_one("SELECT * FROM pgagent.stats()")
         return dict(result) if result else {}
         
     def get_memories(self, limit: int = 50, offset: int = 0):
         return self.execute(
             """SELECT memory_id, content, category, source, importance, created_at 
-               FROM pg_agent.memory 
+               FROM pgagent.memory 
                ORDER BY created_at DESC 
                LIMIT %s OFFSET %s""",
             (limit, offset)
@@ -99,7 +114,7 @@ class Database:
         
     def delete_memory(self, memory_id: str) -> bool:
         result = self.execute_one(
-            "SELECT pg_agent.delete_memory(%s::uuid) as deleted",
+            "SELECT pgagent.delete_memory(%s::uuid) as deleted",
             (memory_id,)
         )
         return result['deleted'] if result else False

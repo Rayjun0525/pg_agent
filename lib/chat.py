@@ -1,9 +1,10 @@
-"""
-pg_agent Chat Providers
-Supports: OpenAI, Anthropic, Gemini
+"""pg_agent Chat Providers.
+
+Supports: OpenAI, Anthropic, Gemini, Ollama
 """
 
 import os
+import requests
 from typing import List, Dict
 
 
@@ -19,6 +20,8 @@ def get_chat_response(user_message: str, history: List[Dict], context: str, sett
         return _anthropic_chat(user_message, history, context, system_prompt, model)
     elif provider == 'gemini':
         return _gemini_chat(user_message, history, context, system_prompt, model)
+    elif provider == 'ollama':
+        return _ollama_chat(user_message, history, context, system_prompt, model)
     else:
         raise ValueError(f"Unknown chat provider: {provider}")
 
@@ -79,3 +82,28 @@ def _gemini_chat(user_message: str, history: List[Dict], context: str, system_pr
     
     response = chat.send_message(user_message)
     return response.text
+
+
+def _ollama_chat(user_message: str, history: List[Dict], context: str, system_prompt: str, model: str) -> str:
+    host = os.getenv('OLLAMA_HOST', 'http://127.0.0.1:11434').rstrip('/')
+
+    # Reasonable local default
+    if model in ('gpt-4o-mini', 'gpt-4o'):
+        model = os.getenv('OLLAMA_CHAT_MODEL', 'llama3.1:8b')
+
+    messages = [{"role": "system", "content": system_prompt + context}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+
+    response = requests.post(
+        f"{host}/api/chat",
+        json={"model": model, "messages": messages, "stream": False},
+        timeout=120,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    message = payload.get("message", {})
+    content = message.get("content")
+    if not content:
+        raise ValueError(f"Invalid Ollama chat response: {payload}")
+    return content

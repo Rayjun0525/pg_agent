@@ -4,7 +4,7 @@
 -- ============================================================================
 
 -- Function: chunk_text
-CREATE OR REPLACE FUNCTION pg_agent.chunk_text(
+CREATE OR REPLACE FUNCTION pgagent.chunk_text(
     p_content text,
     p_max_tokens int DEFAULT 500,
     p_overlap_tokens int DEFAULT 50
@@ -43,7 +43,7 @@ BEGIN
             content := v_current_text;
             start_line := v_current_start;
             end_line := v_line_num - 1;
-            hash := pg_agent.hash_text(v_current_text);
+            hash := pgagent.hash_text(v_current_text);
             RETURN NEXT;
             
             v_chunk_idx := v_chunk_idx + 1;
@@ -69,16 +69,16 @@ BEGIN
         content := v_current_text;
         start_line := v_current_start;
         end_line := array_length(v_lines, 1);
-        hash := pg_agent.hash_text(v_current_text);
+        hash := pgagent.hash_text(v_current_text);
         RETURN NEXT;
     END IF;
 END;
 $$;
 
 -- Function: store_document
-CREATE OR REPLACE FUNCTION pg_agent.store_document(
+CREATE OR REPLACE FUNCTION pgagent.store_document(
     p_content text,
-    p_chunk_embeddings vector(1536)[] DEFAULT NULL,
+    p_chunk_embeddings vector[] DEFAULT NULL,
     p_title text DEFAULT NULL,
     p_source text DEFAULT 'user',
     p_metadata jsonb DEFAULT '{}'::jsonb
@@ -91,7 +91,7 @@ DECLARE
     v_chunk record;
     v_chunk_idx int := 0;
 BEGIN
-    INSERT INTO pg_agent.memory (
+    INSERT INTO pgagent.memory (
         content, source, metadata, category
     ) VALUES (
         COALESCE(p_title, left(p_content, 100)),
@@ -100,8 +100,8 @@ BEGIN
         'fact'
     ) RETURNING memory_id INTO v_memory_id;
     
-    FOR v_chunk IN SELECT * FROM pg_agent.chunk_text(p_content) LOOP
-        INSERT INTO pg_agent.chunk (
+    FOR v_chunk IN SELECT * FROM pgagent.chunk_text(p_content) LOOP
+        INSERT INTO pgagent.chunk (
             memory_id, chunk_index, content, start_line, end_line, hash, embedding
         ) VALUES (
             v_memory_id,
@@ -124,33 +124,33 @@ END;
 $$;
 
 -- Function: delete_memory
-CREATE OR REPLACE FUNCTION pg_agent.delete_memory(p_memory_id uuid)
+CREATE OR REPLACE FUNCTION pgagent.delete_memory(p_memory_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_deleted boolean;
+    v_rows bigint;
 BEGIN
-    DELETE FROM pg_agent.memory WHERE memory_id = p_memory_id;
-    GET DIAGNOSTICS v_deleted = ROW_COUNT;
-    RETURN v_deleted > 0;
+    DELETE FROM pgagent.memory WHERE memory_id = p_memory_id;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    RETURN v_rows > 0;
 END;
 $$;
 
 -- Function: clear_all
-CREATE OR REPLACE FUNCTION pg_agent.clear_all()
+CREATE OR REPLACE FUNCTION pgagent.clear_all()
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    TRUNCATE pg_agent.memory CASCADE;
-    TRUNCATE pg_agent.session;
-    TRUNCATE pg_agent.embedding_cache;
+    TRUNCATE pgagent.memory CASCADE;
+    TRUNCATE pgagent.session;
+    TRUNCATE pgagent.embedding_cache;
 END;
 $$;
 
 -- Function: stats
-CREATE OR REPLACE FUNCTION pg_agent.stats()
+CREATE OR REPLACE FUNCTION pgagent.stats()
 RETURNS TABLE (
     total_memories bigint,
     total_chunks bigint,
@@ -165,12 +165,15 @@ AS $$
 BEGIN
     RETURN QUERY
     SELECT
-        (SELECT count(*) FROM pg_agent.memory)::bigint,
-        (SELECT count(*) FROM pg_agent.chunk)::bigint,
-        (SELECT count(*) FROM pg_agent.session)::bigint,
-        (SELECT count(*) FROM pg_agent.embedding_cache)::bigint,
-        (SELECT count(*) FROM pg_agent.memory WHERE embedding IS NOT NULL)::bigint,
-        (SELECT jsonb_object_agg(category, cnt) 
-         FROM (SELECT category, count(*) as cnt FROM pg_agent.memory GROUP BY category) sub);
+        (SELECT count(*) FROM pgagent.memory)::bigint,
+        (SELECT count(*) FROM pgagent.chunk)::bigint,
+        (SELECT count(*) FROM pgagent.session)::bigint,
+        (SELECT count(*) FROM pgagent.embedding_cache)::bigint,
+        (SELECT count(*) FROM pgagent.memory WHERE embedding IS NOT NULL)::bigint,
+        COALESCE(
+            (SELECT jsonb_object_agg(category, cnt) 
+             FROM (SELECT category, count(*) as cnt FROM pgagent.memory GROUP BY category) sub),
+            '{}'::jsonb
+        );
 END;
 $$;

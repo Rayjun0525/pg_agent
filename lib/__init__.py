@@ -1,1 +1,1 @@
-# OpenClaw-PG Library
+# pg_agent Library

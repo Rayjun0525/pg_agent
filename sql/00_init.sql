@@ -8,6 +8,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Single unified schema
-CREATE SCHEMA IF NOT EXISTS pg_agent;
+CREATE SCHEMA IF NOT EXISTS pgagent;
 
-COMMENT ON SCHEMA pg_agent IS 'pg_agent: Autonomous Agent capabilities for PostgreSQL';
+COMMENT ON SCHEMA pgagent IS 'pg_agent: Autonomous Agent capabilities for PostgreSQL';

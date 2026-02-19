@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Add parent directory for imports
@@ -42,6 +43,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="pg_agent", lifespan=lifespan)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # Models
@@ -201,7 +211,7 @@ def index():
 if __name__ == "__main__":
     import uvicorn
     
-    parser = argparse.ArgumentParser(description='OpenClaw-PG Web GUI')
+    parser = argparse.ArgumentParser(description='pg_agent Web GUI')
     parser.add_argument('--port', type=int, default=8000, help='Port to run on')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--db', help='Database URL')

@@ -7,7 +7,7 @@
 -- Function: should_capture
 -- Purpose: Determine if content should be auto-captured as memory
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.should_capture(p_text text)
+CREATE OR REPLACE FUNCTION pgagent.should_capture(p_text text)
 RETURNS boolean
 LANGUAGE plpgsql
 IMMUTABLE
@@ -49,13 +49,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION pg_agent.should_capture IS 'Determine if text should be auto-captured as memory';
+COMMENT ON FUNCTION pgagent.should_capture IS 'Determine if text should be auto-captured as memory';
 
 -- ----------------------------------------------------------------------------
 -- Function: detect_category
 -- Purpose: Auto-categorize memory content
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.detect_category(p_text text)
+CREATE OR REPLACE FUNCTION pgagent.detect_category(p_text text)
 RETURNS text
 LANGUAGE plpgsql
 IMMUTABLE
@@ -81,13 +81,13 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION pg_agent.detect_category IS 'Auto-categorize memory content';
+COMMENT ON FUNCTION pgagent.detect_category IS 'Auto-categorize memory content';
 
 -- ----------------------------------------------------------------------------
 -- Function: hash_text
 -- Purpose: Generate SHA256 hash
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.hash_text(p_text text)
+CREATE OR REPLACE FUNCTION pgagent.hash_text(p_text text)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
@@ -98,11 +98,11 @@ $$;
 -- ----------------------------------------------------------------------------
 -- Function: store
 -- Purpose: Store content as memory with auto-categorization
--- Usage: SELECT pg_agent.store('User prefers dark mode', embedding_vector);
+-- Usage: SELECT pgagent.store('User prefers dark mode', embedding_vector);
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.store(
+CREATE OR REPLACE FUNCTION pgagent.store(
     p_content text,
-    p_embedding vector(1536) DEFAULT NULL,
+    p_embedding vector DEFAULT NULL,
     p_source text DEFAULT 'user',
     p_importance float DEFAULT 0.7,
     p_metadata jsonb DEFAULT '{}'::jsonb
@@ -116,17 +116,17 @@ DECLARE
     v_hash text;
 BEGIN
     -- Auto-detect category
-    v_category := pg_agent.detect_category(p_content);
-    v_hash := pg_agent.hash_text(p_content);
+    v_category := pgagent.detect_category(p_content);
+    v_hash := pgagent.hash_text(p_content);
     
     -- Check for duplicate
     SELECT memory_id INTO v_memory_id
-    FROM pg_agent.memory
-    WHERE pg_agent.hash_text(content) = v_hash;
+    FROM pgagent.memory
+    WHERE pgagent.hash_text(content) = v_hash;
     
     IF v_memory_id IS NOT NULL THEN
         -- Update existing memory
-        UPDATE pg_agent.memory
+        UPDATE pgagent.memory
         SET 
             embedding = COALESCE(p_embedding, embedding),
             importance = GREATEST(importance, p_importance),
@@ -137,7 +137,7 @@ BEGIN
     END IF;
     
     -- Insert new memory
-    INSERT INTO pg_agent.memory (
+    INSERT INTO pgagent.memory (
         content, embedding, category, source, importance, metadata
     ) VALUES (
         p_content, p_embedding, v_category, p_source, p_importance, p_metadata
@@ -145,7 +145,7 @@ BEGIN
     
     -- Cache embedding if provided
     IF p_embedding IS NOT NULL THEN
-        INSERT INTO pg_agent.embedding_cache (hash, embedding)
+        INSERT INTO pgagent.embedding_cache (hash, embedding)
         VALUES (v_hash, p_embedding)
         ON CONFLICT (hash) DO NOTHING;
     END IF;
@@ -154,43 +154,43 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION pg_agent.store IS 'Store content as memory with auto-categorization';
+COMMENT ON FUNCTION pgagent.store IS 'Store content as memory with auto-categorization';
 
 -- ----------------------------------------------------------------------------
 -- Function: get_cached_embedding
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.get_cached_embedding(p_text text)
-RETURNS vector(1536)
+CREATE OR REPLACE FUNCTION pgagent.get_cached_embedding(p_text text)
+RETURNS vector
 LANGUAGE sql
 STABLE
 AS $$
     SELECT embedding
-    FROM pg_agent.embedding_cache
-    WHERE hash = pg_agent.hash_text(p_text);
+    FROM pgagent.embedding_cache
+    WHERE hash = pgagent.hash_text(p_text);
 $$;
 
 -- ----------------------------------------------------------------------------
 -- Function: session_get
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.session_get(p_key text)
+CREATE OR REPLACE FUNCTION pgagent.session_get(p_key text)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $$
     SELECT COALESCE(context, '{}'::jsonb)
-    FROM pg_agent.session
+    FROM pgagent.session
     WHERE key = p_key;
 $$;
 
 -- ----------------------------------------------------------------------------
 -- Function: session_set
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.session_set(p_key text, p_context jsonb)
+CREATE OR REPLACE FUNCTION pgagent.session_set(p_key text, p_context jsonb)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO pg_agent.session (key, context, updated_at)
+    INSERT INTO pgagent.session (key, context, updated_at)
     VALUES (p_key, p_context, now())
     ON CONFLICT (key) 
     DO UPDATE SET 
@@ -202,16 +202,16 @@ $$;
 -- ----------------------------------------------------------------------------
 -- Function: session_append
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.session_append(p_key text, p_context jsonb)
+CREATE OR REPLACE FUNCTION pgagent.session_append(p_key text, p_context jsonb)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO pg_agent.session (key, context, updated_at)
+    INSERT INTO pgagent.session (key, context, updated_at)
     VALUES (p_key, p_context, now())
     ON CONFLICT (key) 
     DO UPDATE SET 
-        context = pg_agent.session.context || p_context,
+        context = pgagent.session.context || p_context,
         updated_at = now();
 END;
 $$;
@@ -219,15 +219,15 @@ $$;
 -- ----------------------------------------------------------------------------
 -- Function: session_delete
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION pg_agent.session_delete(p_key text)
+CREATE OR REPLACE FUNCTION pgagent.session_delete(p_key text)
 RETURNS boolean
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_deleted boolean;
+    v_rows bigint;
 BEGIN
-    DELETE FROM pg_agent.session WHERE key = p_key;
-    GET DIAGNOSTICS v_deleted = ROW_COUNT;
-    RETURN v_deleted > 0;
+    DELETE FROM pgagent.session WHERE key = p_key;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    RETURN v_rows > 0;
 END;
 $$;
